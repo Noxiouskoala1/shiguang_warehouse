@@ -168,6 +168,11 @@ schools:
     initial: "H"
     resource_folder: "HNUST"
 
+  - id: "HUSE"
+    name: "湖南科技学院"
+    initial: "H"
+    resource_folder: "HUSE"
+
   - id: "JSNU"
     name: "江苏师范大学"
     initial: "J"
