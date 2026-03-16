@@ -89,37 +89,31 @@ function parseTimetableToModel(htmlString) {
     const doc = new DOMParser().parseFromString(htmlString, "text/html");
     const timetable = doc.getElementById('kbtable');
     if (!timetable) {
-        console.log('未找到课表表格元素');
         return [];
     }
 
     let rawCourses = [];
     const rows = Array.from(timetable.querySelectorAll('tr')).filter(r => r.querySelector('td'));
-    console.log('找到课表行：', rows.length);
 
-    rows.forEach((row, rowIndex) => {
+    rows.forEach((row) => {
         const cells = row.querySelectorAll('td');
-        console.log(`第 ${rowIndex} 行，找到 ${cells.length} 个单元格`);
         
         cells.forEach((cell, dayIndex) => {
             const day = dayIndex + 1; // 星期几（1-7）
             
             // 获取所有课程详情 div，包括所有状态的
             const detailDivs = Array.from(cell.querySelectorAll('div.kbcontent'));
-            console.log(`第 ${dayIndex} 天，找到 ${detailDivs.length} 个课程 div`);
             
-            detailDivs.forEach((detailDiv, divIndex) => {
+            detailDivs.forEach((detailDiv) => {
                 const rawHtml = detailDiv.innerHTML.trim();
                 const innerText = detailDiv.innerText.trim();
-                console.log(`第 ${divIndex} 个 div，内容：`, innerText.substring(0, 100));
                 
                 if (!rawHtml || rawHtml === "&nbsp;" || innerText.length < 2) return;
 
                 // 分割同一个格子内的多门课程
                 const blocks = rawHtml.split(/---------------------|----------------------/);
-                console.log(`分割出 ${blocks.length} 个课程块`);
 
-                blocks.forEach((block, blockIndex) => {
+                blocks.forEach((block) => {
                     if (!block.trim()) return;
                     
                     const tempDiv = document.createElement('div');
@@ -130,14 +124,12 @@ function parseTimetableToModel(htmlString) {
                     const firstLine = tempDiv.innerHTML.split('<br>')[0].trim();
                     // 移除HTML标签，保留文本内容
                     name = firstLine.replace(/<[^>]*>/g, '').trim();
-                    console.log(`课程名：${name}`);
                     
                     if (!name) return;
 
                     // 2. 提取周次和节次信息
                     const weekFont = tempDiv.querySelector('font[title="周次(节次)"]');
                     const weekFull = weekFont?.innerText || "";
-                    console.log(`周次和节次信息：${weekFull}`);
                     let startSection = 0;
                     let endSection = 0;
                     let weekStr = "";
@@ -148,7 +140,6 @@ function parseTimetableToModel(htmlString) {
                         weekStr = weekSectionMatch[1]; // "1-17"
                         startSection = parseInt(weekSectionMatch[2], 10);
                         endSection = parseInt(weekSectionMatch[3], 10);
-                        console.log(`匹配到格式1：周次=${weekStr}, 开始节次=${startSection}, 结束节次=${endSection}`);
                     } else {
                         // 尝试匹配 "1-17(周)[01-02 节]" 格式（带空格）
                         const weekSectionMatchWithSpace = weekFull.match(/(.+?)\(周\)\[(\d+)-(\d+) 节\]/);
@@ -156,7 +147,6 @@ function parseTimetableToModel(htmlString) {
                             weekStr = weekSectionMatchWithSpace[1];
                             startSection = parseInt(weekSectionMatchWithSpace[2], 10);
                             endSection = parseInt(weekSectionMatchWithSpace[3], 10);
-                            console.log(`匹配到格式2：周次=${weekStr}, 开始节次=${startSection}, 结束节次=${endSection}`);
                         } else {
                             // 尝试匹配其他格式
                             const altMatch = weekFull.match(/(\d+)-(\d+)/);
@@ -165,20 +155,15 @@ function parseTimetableToModel(htmlString) {
                                 // 假设是第1-2节
                                 startSection = 1;
                                 endSection = 2;
-                                console.log(`匹配到格式3：周次=${weekStr}, 开始节次=${startSection}, 结束节次=${endSection}`);
-                            } else {
-                                console.log('未匹配到周次和节次信息');
                             }
                         }
                     }
 
                     // 3. 提取教师信息
                     const teacher = tempDiv.querySelector('font[title="老师"]')?.innerText.trim() || "未知教师";
-                    console.log(`教师：${teacher}`);
 
                     // 4. 提取教室地点
                     const position = tempDiv.querySelector('font[title="教室"]')?.innerText.trim() || "未知地点";
-                    console.log(`地点：${position}`);
 
                     if (name && startSection > 0) {
                         const course = {
@@ -191,17 +176,13 @@ function parseTimetableToModel(htmlString) {
                             "endSection": endSection
                         };
                         rawCourses.push(course);
-                        console.log('添加课程：', course);
                     }
                 });
             });
         });
     });
 
-    console.log(`原始课程数量：${rawCourses.length}`);
-    const mergedCourses = mergeAndDistinctCourses(rawCourses);
-    console.log(`合并后课程数量：${mergedCourses.length}`);
-    return mergedCourses;
+    return mergeAndDistinctCourses(rawCourses);
 }
 
 /**
@@ -211,7 +192,6 @@ function extractSemesterOptions(htmlString) {
     const doc = new DOMParser().parseFromString(htmlString, "text/html");
     const semesterSelect = doc.getElementById('xnxq01id');
     if (!semesterSelect) {
-        console.log('未找到学期选择元素');
         return [];
     }
     
@@ -220,7 +200,6 @@ function extractSemesterOptions(htmlString) {
         text: opt.text
     }));
     
-    console.log(`提取到 ${options.length} 个学期选项`);
     return options;
 }
 
@@ -277,7 +256,7 @@ function extractTimeSlots(htmlString) {
 async function showWelcomeAlert() {
     return await window.AndroidBridgePromise.showAlert(
         "导入提示",
-        "请确保已在内置浏览器中成功登录河北地质大学华信学院教务系统。",
+        "请确保已在学期理论课表页面,（首页课表是本周课表不可导入,请进入学期理论课表页面）",
         "开始导入"
     );
 }
@@ -310,7 +289,6 @@ async function getSemesterParamsFromUser(semesterOptions) {
  */
 async function fetchCourseHtml() {
     try {
-        AndroidBridge.showToast("正在获取课表页面...");
         const response = await fetch("http://61.182.88.214:8090/jsxsd/xskb/xskb_list.do", {
             method: "GET",
             credentials: "include",
@@ -324,11 +302,9 @@ async function fetchCourseHtml() {
         }
         
         const text = await response.text();
-        console.log('获取到课表页面，状态码：', response.status);
         return text;
     } catch (error) {
         console.error('获取课表页面失败：', error);
-        AndroidBridge.showToast("获取课表页面失败：" + error.message);
         throw error;
     }
 }
@@ -362,18 +338,14 @@ async function runImportFlow() {
         if (!start) return;
 
         // 2. 获取课表 HTML（包含学期选项和作息时间）
-        AndroidBridge.showToast("正在获取课表页面...");
         const html = await fetchCourseHtml();
-        console.log('获取到课表页面 HTML，长度：', html.length);
         
         // 3. 从网页中提取学期选项
         const semesterOptions = extractSemesterOptions(html);
-        console.log('学期选项：', semesterOptions);
         
         // 4. 从网页中提取作息时间
         let timeSlots = extractTimeSlots(html);
         if (!timeSlots || timeSlots.length === 0) {
-            console.warn("未能从网页提取作息时间，使用默认值");
             // 设置默认作息时间
             timeSlots = [
                 { number: 1, startTime: "08:30", endTime: "09:15" },
@@ -388,15 +360,12 @@ async function runImportFlow() {
                 { number: 10, startTime: "19:55", endTime: "20:40" }
             ];
         }
-        console.log('作息时间：', timeSlots);
 
         // 5. 让用户选择学期
         const semesterId = await getSemesterParamsFromUser(semesterOptions);
         if (!semesterId) return;
-        console.log('选择的学期 ID：', semesterId);
 
         // 6. 根据选择的学期重新请求课表数据
-        AndroidBridge.showToast("正在请求选定学期的课表数据...");
         const response = await fetch("http://61.182.88.214:8090/jsxsd/xskb/xskb_list.do", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -404,19 +373,15 @@ async function runImportFlow() {
             credentials: "include"
         });
         const courseHtml = await response.text();
-        console.log('获取到选定学期的课表 HTML，长度：', courseHtml.length);
 
         // 7. 解析课程数据
         const finalCourses = parseTimetableToModel(courseHtml);
-        console.log('解析出的课程：', finalCourses);
 
         if (finalCourses.length === 0) {
             AndroidBridge.showToast("未发现课程，请检查学期选择或登录状态。");
             // 尝试直接从初始 HTML 中解析课程
             const initialCourses = parseTimetableToModel(html);
-            console.log('从初始 HTML 解析的课程：', initialCourses);
             if (initialCourses.length > 0) {
-                AndroidBridge.showToast("使用初始页面的课程数据");
                 await saveCourseDataToApp(initialCourses, timeSlots);
                 AndroidBridge.showToast(`成功导入 ${initialCourses.length} 门课程`);
                 AndroidBridge.notifyTaskCompletion();
@@ -428,6 +393,7 @@ async function runImportFlow() {
         await saveCourseDataToApp(finalCourses, timeSlots);
 
         AndroidBridge.showToast(`成功导入 ${finalCourses.length} 门课程`);
+        AndroidBridge.showToast(`请在设置界面手动选择当前周数`);
         AndroidBridge.notifyTaskCompletion();
 
     } catch (error) {
