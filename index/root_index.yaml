@@ -327,3 +327,9 @@ schools:
     name: "桂林信息科技学院"
     initial: "G"
     resource_folder: "GUIT"
+
+  - id: "DLMU"
+    name: "大连海事大学"
+    initial: "D"
+    resource_folder: "DLMU"
+
