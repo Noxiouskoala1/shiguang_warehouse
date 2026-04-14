@@ -296,7 +296,16 @@
     function validateSemesterStartDateInput(input) {
         const value = String(input || "").trim();
         if (!value) return "请输入开学日期";
-        return /^\d{4}[-/.]\d{2}[-/.]\d{2}$/.test(value) ? false : "请输入 YYYY-MM-DD";
+        if (!/^\d{4}[-/.]\d{2}[-/.]\d{2}$/.test(value)) return "请输入 YYYY-MM-DD";
+        const normalized = value.replace(/[/.]/g, "-");
+        const parts = normalized.split("-");
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return "请输入有效日期";
+        const date = new Date(year, month - 1, day);
+        const isValidDate = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+        return isValidDate ? false : "请输入有效日期";
     }
 
     window.validateSemesterStartDateInput = validateSemesterStartDateInput;
@@ -387,11 +396,7 @@
         }
         await window.AndroidBridgePromise.saveImportedCourses(JSON.stringify(courses));
         await window.AndroidBridgePromise.savePresetTimeSlots(JSON.stringify(getPresetTimeSlots()));
-        try {
-            await window.AndroidBridgePromise.saveCourseConfig(JSON.stringify({ semesterStartDate }));
-        } catch (e) {
-            console.warn("保存开学日期配置失败:", e);
-        }
+        await window.AndroidBridgePromise.saveCourseConfig(JSON.stringify({ semesterStartDate }));
         AndroidBridge.showToast(`导入成功，共 ${courses.length} 条课程`);
         AndroidBridge.notifyTaskCompletion();
     }
