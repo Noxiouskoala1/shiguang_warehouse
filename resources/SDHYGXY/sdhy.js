@@ -1,179 +1,205 @@
 // 山东华宇工学院 拾光课程表适配脚本
+// 基于正方教务系统API适配
 
+/**
+ * 解析周次字符串
+ */
 function parseWeeks(weekStr) {
 	var weeks = [];
 	if (!weekStr) return weeks;
 	
-	// 修复：去掉所有"周"字，避免 replace 只替换第一个
-	weekStr = weekStr.split('周').join('');
-	
-	var weekRanges = weekStr.split(',');
-	for (var r = 0; r < weekRanges.length; r++) {
-		var range = weekRanges[r].trim();
-		var dashIdx = range.indexOf('-');
-		// 修复：去掉对"周"字的判断，已经提前处理过了
-		if (dashIdx !== -1) {
-			var start = parseInt(range.substring(0, dashIdx));
-			var endPart = range.substring(dashIdx + 1);
-			var end = parseInt(endPart);
-			if (!isNaN(start) && !isNaN(end)) {
-				for (var w = start; w <= end; w++) {
-					weeks.push(w);
-				}
-			}
+	var weekSets = weekStr.split(',');
+	for (var i = 0; i < weekSets.length; i++) {
+		var set = weekSets[i].trim();
+		var isSingle = set.indexOf('(单)') !== -1;
+		var isDouble = set.indexOf('(双)') !== -1;
+		
+		set = set.split('(单)').join('');
+		set = set.split('(双)').join('');
+		set = set.trim();
+		
+		var dashIdx = set.indexOf('-');
+		var start = 0;
+		var end = 0;
+		var processed = false;
+		
+		if (dashIdx !== -1 && set.indexOf('周') !== -1) {
+			start = parseInt(set.substring(0, dashIdx));
+			var endPart = set.substring(dashIdx + 1);
+			endPart = endPart.split('周').join('');
+			end = parseInt(endPart);
+			processed = true;
 		} else {
-			var singleWeek = parseInt(range);
-			if (!isNaN(singleWeek)) {
-				weeks.push(singleWeek);
+			var weekNum = parseInt(set);
+			if (!isNaN(weekNum)) {
+				start = end = weekNum;
+				processed = true;
+			}
+		}
+		
+		if (processed) {
+			for (var w = start; w <= end; w++) {
+				if (isSingle && w % 2 === 0) continue;
+				if (isDouble && w % 2 !== 0) continue;
+				weeks.push(w);
 			}
 		}
 	}
 	
 	var uniqueWeeks = [];
-	for (var i = 0; i < weeks.length; i++) {
-		if (uniqueWeeks.indexOf(weeks[i]) === -1) {
-			uniqueWeeks.push(weeks[i]);
+	for (var j = 0; j < weeks.length; j++) {
+		if (uniqueWeeks.indexOf(weeks[j]) === -1) {
+			uniqueWeeks.push(weeks[j]);
 		}
 	}
 	uniqueWeeks.sort(function(a, b) { return a - b; });
 	return uniqueWeeks;
 }
 
-function parseSections(sectionStr) {
-	var parts = sectionStr.split('-');
-	var start = parseInt(parts[0]);
-	var end = parseInt(parts[parts.length - 1]);
-	var sections = [];
-	for (var s = start; s <= end; s++) {
-		sections.push(s);
-	}
-	return sections;
-}
-
-function parseHtmlData(html) {
-	console.log('JS: 开始解析HTML课表数据...');
-	var results = [];
-	var parser = new DOMParser();
-	var doc = parser.parseFromString(html, 'text/html');
-	var courses = doc.getElementsByClassName('timetable_con');
-	console.log('JS: 找到 ' + courses.length + ' 个课程节点');
+/**
+ * 解析API返回的JSON数据
+ */
+function parseJsonData(jsonData) {
+	console.log('JS: parseJsonData 正在解析JSON数据...');
 	
-	for (var i = 0; i < courses.length; i++) {
-		var courseDiv = courses[i];
-		var parentTd = courseDiv.parentElement;
-		var tdId = parentTd.id;
-		if (!tdId) continue;
+	if (!jsonData || !Array.isArray(jsonData.kbList)) {
+		console.warn('JS: JSON数据结构错误或缺少kbList字段');
+		return [];
+	}
+	
+	var rawCourseList = jsonData.kbList;
+	var finalCourseList = [];
+	
+	for (var i = 0; i < rawCourseList.length; i++) {
+		var rawCourse = rawCourseList[i];
 		
-		var day = parseInt(tdId.split('-')[0]);
-		if (isNaN(day)) continue;
+		if (!rawCourse.kcmc || !rawCourse.xm || !rawCourse.cdmc || 
+			!rawCourse.xqj || !rawCourse.jcs || !rawCourse.zcd) {
+			continue;
+		}
 		
-		var titleSpan = courseDiv.getElementsByClassName('title')[0];
-		var courseName = titleSpan.textContent.trim();
+		var weeksArray = parseWeeks(rawCourse.zcd);
+		if (weeksArray.length === 0) {
+			continue;
+		}
+		
+		var sectionParts = rawCourse.jcs.split('-');
+		var startSection = parseInt(sectionParts[0]);
+		var endSection = parseInt(sectionParts[sectionParts.length - 1]);
+		var day = parseInt(rawCourse.xqj);
+		
+		if (isNaN(day) || isNaN(startSection) || isNaN(endSection) || 
+			day < 1 || day > 7 || startSection > endSection) {
+			continue;
+		}
+		
+		var courseName = rawCourse.kcmc.trim();
 		courseName = courseName.split('★').join('');
 		courseName = courseName.split('●').join('');
 		courseName = courseName.split('◆').join('');
 		courseName = courseName.split('◇').join('');
 		courseName = courseName.split('○').join('');
 		
-		var paras = courseDiv.getElementsByTagName('p');
-		var teacher = '';
-		var position = '';
-		var timeStr = '';
-		
-		for (var j = 0; j < paras.length; j++) {
-			var p = paras[j];
-			var spans = p.getElementsByTagName('span');
-			for (var k = 0; k < spans.length; k++) {
-				var span = spans[k];
-				var tooltipTitle = span.getAttribute('title');
-				if (tooltipTitle === '节/周') {
-					timeStr = p.textContent.trim();
-				} else if (tooltipTitle === '上课地点') {
-					position = p.textContent.trim();
-				} else if (tooltipTitle === '教师 ') {
-					teacher = p.textContent.trim();
-				}
-			}
-		}
-		
-		if (!timeStr) continue;
-		
-		var sectionStartIdx = timeStr.indexOf('(');
-		var sectionEndIdx = timeStr.indexOf('节');
-		if (sectionStartIdx === -1 || sectionEndIdx === -1) continue;
-		
-		var sectionPart = timeStr.substring(sectionStartIdx + 1, sectionEndIdx);
-		var sections = parseSections(sectionPart);
-		
-		// 提取周次部分：")" 后面的所有内容
-		var weekPart = timeStr.substring(timeStr.indexOf(')') + 1);
-		
-		var weeks = parseWeeks(weekPart);
-		
-		if (weeks.length === 0) continue;
-		
-		results.push({
+		finalCourseList.push({
 			name: courseName,
-			position: position,
-			teacher: teacher,
-			weeks: weeks,
+			teacher: rawCourse.xm.trim(),
+			position: rawCourse.cdmc.trim(),
 			day: day,
-			sections: sections
+			startSection: startSection,
+			endSection: endSection,
+			weeks: weeksArray
 		});
 	}
 	
-	console.log('JS: HTML解析完成，共找到 ' + results.length + ' 门课程');
-	return results;
+	finalCourseList.sort(function(a, b) {
+		if (a.day !== b.day) return a.day - b.day;
+		if (a.startSection !== b.startSection) return a.startSection - b.startSection;
+		return a.name.localeCompare(b.name);
+	});
+	
+	console.log('JS: JSON数据解析完成，共找到 ' + finalCourseList.length + ' 门课程');
+	return finalCourseList;
 }
 
-async function scheduleHtmlProvider() {
-	return document.body.innerHTML;
+/**
+ * 检查是否在登录页面
+ */
+function isLoginPage() {
+	var url = window.location.href;
+	var loginUrls = [
+		'login_slogin.html',
+		'login_login.html'
+	];
+	for (var i = 0; i < loginUrls.length; i++) {
+		if (url.indexOf(loginUrls[i]) !== -1) return true;
+	}
+	return false;
 }
 
-async function promptUserToStart() {
-	console.log('JS: 显示导入确认弹窗');
-	return await window.AndroidBridgePromise.showAlert(
-		'教务系统课表导入',
-		'请确保当前已登录正方教务系统。接下来将选择学年、学期和开学日期。',
-		'好的，开始导入'
-	);
-}
-
-function validateYearInput(input) {
-	console.log('JS: validateYearInput 被调用，输入: ' + input);
-	if (/^[0-9]{4}$/.test(input)) {
-		console.log('JS: validateYearInput 验证通过');
-		return false;
+/**
+ * 自动获取当前学年
+ * 优先从页面下拉框获取，失败则根据日期计算
+ */
+function getCurrentAcademicYear() {
+	// 尝试从页面获取
+	var xnmSelect = document.getElementById('xnm');
+	if (xnmSelect && xnmSelect.value) {
+		var year = xnmSelect.value;
+		console.log('JS: 从页面获取到学年: ' + year);
+		return year;
+	}
+	
+	// 根据当前日期计算学年
+	var now = new Date();
+	var year = now.getFullYear();
+	var month = now.getMonth() + 1;
+	
+	// 9月及以后属于新学年
+	if (month >= 9) {
+		console.log('JS: 根据日期计算学年: ' + year);
+		return year.toString();
 	} else {
-		console.log('JS: validateYearInput 验证失败');
-		return '请输入四位数字的学年！';
+		console.log('JS: 根据日期计算学年: ' + (year - 1));
+		return (year - 1).toString();
 	}
 }
 
-async function getAcademicYear() {
-	var currentYear = new Date().getFullYear().toString();
-	console.log('JS: 提示用户输入学年');
-	return await window.AndroidBridgePromise.showPrompt(
-		'选择学年',
-		'请输入要导入课程的起始学年（如2025-2026应填2025）：',
-		currentYear,
-		'validateYearInput'
-	);
-}
-
-async function selectSemester() {
-	var semesters = ['第一学期', '第二学期'];
-	console.log('JS: 提示用户选择学期');
-	var semesterIndex = await window.AndroidBridgePromise.showSingleSelection(
-		'选择学期',
-		JSON.stringify(semesters),
-		0
-	);
-	return semesterIndex;
+/**
+ * 自动获取当前学期
+ * 优先从页面下拉框获取，失败则根据日期计算
+ */
+function getCurrentSemesterIndex() {
+	// 尝试从页面获取
+	var xqmSelect = document.getElementById('xqm');
+	if (xqmSelect && xqmSelect.value) {
+		var xqm = xqmSelect.value;
+		// xqm: 3=第一学期, 12=第二学期
+		if (xqm === '3') {
+			console.log('JS: 从页面获取到学期: 第一学期');
+			return 0;
+		} else if (xqm === '12') {
+			console.log('JS: 从页面获取到学期: 第二学期');
+			return 1;
+		}
+	}
+	
+	// 根据日期计算：9月-次年2月为第一学期，3月-7月为第二学期
+	var month = new Date().getMonth() + 1;
+	if (month >= 3 && month <= 7) {
+		console.log('JS: 根据日期计算学期: 第二学期');
+		return 1;
+	} else {
+		console.log('JS: 根据日期计算学期: 第一学期');
+		return 0;
+	}
 }
 
 function getSemesterCode(semesterIndex) {
 	return semesterIndex === 0 ? '3' : '12';
+}
+
+function getSemesterName(semesterIndex) {
+	return semesterIndex === 0 ? '第一学期' : '第二学期';
 }
 
 function validateDateInput(input) {
@@ -187,6 +213,24 @@ function validateDateInput(input) {
 	}
 }
 
+async function promptUserToStart() {
+	console.log('JS: 流程开始：显示公告');
+	return await window.AndroidBridgePromise.showAlert(
+		'教务系统课表导入',
+		'导入前请确保您已在浏览器中成功登录教务系统。',
+		'好的，开始导入'
+	);
+}
+
+async function confirmAcademicYear(year, semesterName) {
+	console.log('JS: 显示学年学期确认弹窗');
+	return await window.AndroidBridgePromise.showAlert(
+		'确认学年学期',
+		'检测到当前为 ' + year + '-' + (parseInt(year) + 1) + ' 学年' + semesterName + '，确认导入该学期课程吗？',
+		'确认导入'
+	);
+}
+
 async function getSemesterStartDate() {
 	console.log('JS: 提示用户输入开学日期');
 	return await window.AndroidBridgePromise.showPrompt(
@@ -197,92 +241,55 @@ async function getSemesterStartDate() {
 	);
 }
 
-async function switchToCorrectSemester(year, semesterIndex) {
-	var semesterCode = getSemesterCode(semesterIndex);
-	var xnmSelect = document.getElementById('xnm');
-	var xqmSelect = document.getElementById('xqm');
-	
-	if (!xnmSelect || !xqmSelect) {
-		console.log('JS: 未找到学年学期选择器，跳过切换');
-		return true;
-	}
-	
-	var currentXnm = xnmSelect.value;
-	var currentXqm = xqmSelect.value;
-	
-	if (currentXnm === year && currentXqm === semesterCode) {
-		console.log('JS: 当前页面已经是目标学年学期');
-		return true;
-	}
-	
-	console.log('JS: 自动切换学年学期到 ' + year + ' 第' + (semesterIndex + 1) + '学期');
-	xnmSelect.value = year;
-	xqmSelect.value = semesterCode;
-	
-	var event = document.createEvent('HTMLEvents');
-	event.initEvent('change', true, true);
-	xnmSelect.dispatchEvent(event);
-	xqmSelect.dispatchEvent(event);
-	
-	var searchBtn = document.getElementById('search_go');
-	if (searchBtn) {
-		searchBtn.click();
-		console.log('JS: 已触发查询，等待页面更新...');
-		return new Promise(function(resolve) {
-			setTimeout(function() {
-				resolve(true);
-			}, 2000);
-		});
-	}
-	
-	return false;
-}
-
+/**
+ * 通过API请求和解析课程数据
+ */
 async function fetchAndParseCourses(academicYear, semesterIndex) {
-	AndroidBridge.showToast('正在解析课表数据...');
-	console.log('JS: 开始获取页面HTML并解析，学年: ' + academicYear + '，学期索引: ' + semesterIndex);
+	AndroidBridge.showToast('正在请求课表数据...');
+	
+	var semesterCode = getSemesterCode(semesterIndex);
+	var baseUrl = window.location.origin;
+	var url = baseUrl + '/jwglxt/kbcx/xskbcx_cxXsgrkb.html?gnmkdm=N2151';
+	var body = 'xnm=' + academicYear + '&xqm=' + semesterCode + '&kzlx=ck';
+	
+	console.log('JS: 发送请求到 ' + url + ', body: ' + body);
 	
 	try {
-		var switchResult = await switchToCorrectSemester(academicYear, semesterIndex);
-		if (!switchResult) {
-			AndroidBridge.showToast('自动切换学年学期失败，请手动选择后重试');
+		var response = await fetch(url, {
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded;charset=UTF-8'
+			},
+			referer: baseUrl + '/jwglxt/kbcx/xskbcx_cxXskbcxIndex.html?gnmkdm=N2151',
+			body: body,
+			method: 'POST',
+			credentials: 'include'
+		});
+		
+		if (!response.ok) {
+			throw new Error('网络请求失败。状态码: ' + response.status);
+		}
+		
+		var jsonText = await response.text();
+		var jsonData;
+		try {
+			jsonData = JSON.parse(jsonText);
+		} catch (e) {
+			console.error('JS: JSON解析失败，可能是会话过期:', e);
+			AndroidBridge.showToast('数据返回格式错误，可能是您未成功登录或会话已过期。');
 			return null;
 		}
 		
-		var providerRes = await scheduleHtmlProvider();
-		if (!providerRes) {
-			AndroidBridge.showToast('获取页面内容失败，请检查网络。');
-			console.log('JS: 获取页面HTML失败');
+		var courses = parseJsonData(jsonData);
+		if (courses.length === 0) {
+			AndroidBridge.showToast('未找到任何课程数据，请检查所选学年学期是否正确。');
 			return null;
 		}
 		
-		var parserRes = parseHtmlData(providerRes);
-		if (!parserRes || parserRes.length === 0) {
-			AndroidBridge.showToast('未解析到课程，请确认当前在课表页面且课程已加载。');
-			console.log('JS: 未解析到任何课程');
-			return null;
-		}
-		
-		var courses = [];
-		for (var i = 0; i < parserRes.length; i++) {
-			var item = parserRes[i];
-			var secs = item.sections;
-			courses.push({
-				name: item.name,
-				teacher: item.teacher,
-				position: item.position,
-				day: item.day,
-				startSection: secs[0],
-				endSection: secs[secs.length - 1],
-				weeks: item.weeks
-			});
-		}
-		
-		console.log('JS: 课程数据处理完成，共 ' + courses.length + ' 门');
+		console.log('JS: 课程数据解析成功，共找到 ' + courses.length + ' 门课程');
 		return courses;
 	} catch (error) {
-		AndroidBridge.showToast('解析失败: ' + error.message);
-		console.error('JS: Parse Error:', error);
+		AndroidBridge.showToast('请求或解析失败: ' + error.message);
+		console.error('JS: Fetch/Parse Error:', error);
 		return null;
 	}
 }
@@ -322,6 +329,7 @@ async function saveConfig(startDate) {
 	}
 }
 
+// 山东华宇工学院西区冬季作息时间
 var TimeSlots = [
 	{ number: 1, startTime: '08:10', endTime: '08:55' },
 	{ number: 2, startTime: '09:05', endTime: '09:50' },
@@ -337,48 +345,48 @@ var TimeSlots = [
 
 async function importPresetTimeSlots(timeSlots) {
 	console.log('JS: 准备导入 ' + timeSlots.length + ' 个预设时间段');
-	console.log('JS: 时间段数据: ' + JSON.stringify(timeSlots));
 	try {
 		await window.AndroidBridgePromise.savePresetTimeSlots(JSON.stringify(timeSlots));
 		AndroidBridge.showToast('预设时间段导入成功！');
-		console.log('JS: 时间段导入成功');
-		return true;
+		console.log('JS: 预设时间段导入成功');
 	} catch (error) {
 		AndroidBridge.showToast('导入时间段失败: ' + error.message);
 		console.error('JS: Save Time Slots Error:', error);
-		return false;
 	}
 }
 
 async function runImportFlow() {
-	console.log('JS: ===== 山东华宇工学院课表导入流程开始 =====');
+	if (isLoginPage()) {
+		AndroidBridge.showToast('导入失败：请先登录教务系统！');
+		console.log('JS: 检测到当前在登录页面，终止导入');
+		return;
+	}
 	
 	var alertConfirmed = await promptUserToStart();
 	if (!alertConfirmed) {
-		AndroidBridge.showToast('用户取消了导入。');
+		AndroidBridge.showToast('用户取消了导入');
 		console.log('JS: 用户取消了导入流程');
 		return;
 	}
 	
-	var academicYear = await getAcademicYear();
-	if (academicYear === null) {
-		AndroidBridge.showToast('导入已取消。');
-		console.log('JS: 获取学年失败/取消，流程终止');
-		return;
-	}
-	console.log('JS: 已选择学年: ' + academicYear);
+	// 自动获取学年和学期
+	var academicYear = getCurrentAcademicYear();
+	var semesterIndex = getCurrentSemesterIndex();
+	var semesterName = getSemesterName(semesterIndex);
 	
-	var semesterIndex = await selectSemester();
-	if (semesterIndex === null || semesterIndex === -1) {
-		AndroidBridge.showToast('导入已取消。');
-		console.log('JS: 选择学期失败/取消，流程终止');
+	console.log('JS: 自动获取到学年: ' + academicYear + ', 学期: ' + semesterName);
+	
+	// 让用户确认
+	var confirmResult = await confirmAcademicYear(academicYear, semesterName);
+	if (!confirmResult) {
+		AndroidBridge.showToast('导入已取消');
+		console.log('JS: 用户取消确认学年学期');
 		return;
 	}
-	console.log('JS: 已选择学期索引: ' + semesterIndex);
 	
 	var startDate = await getSemesterStartDate();
 	if (startDate === null) {
-		AndroidBridge.showToast('导入已取消。');
+		AndroidBridge.showToast('导入已取消');
 		console.log('JS: 获取开学日期失败/取消，流程终止');
 		return;
 	}
@@ -402,14 +410,10 @@ async function runImportFlow() {
 		return;
 	}
 	
-	var slotsResult = await importPresetTimeSlots(TimeSlots);
-	if (!slotsResult) {
-		console.log('JS: 时间段保存失败，流程终止');
-		return;
-	}
+	await importPresetTimeSlots(TimeSlots);
 	
 	AndroidBridge.showToast('课程导入成功，共导入 ' + courses.length + ' 门课程！');
-	console.log('JS: ===== 整个导入流程执行完毕并成功 =====');
+	console.log('JS: 整个导入流程执行完毕并成功');
 	AndroidBridge.notifyTaskCompletion();
 }
 
