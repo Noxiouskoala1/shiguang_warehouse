@@ -392,8 +392,8 @@ schools:
     initial: "Z"
     resource_folder: "CUPK"
   
-  - id: "SDHYGXY"
+  - id: "HUAYU"
     name: "山东华宇工学院"
     initial: "S"
-    resource_folder: "SDHYGXY"
+    resource_folder: "HUAYU"
 
